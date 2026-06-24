@@ -1,0 +1,254 @@
+package com.plugin.blec
+
+import Peripheral
+import android.Manifest
+import android.annotation.SuppressLint
+import android.app.Activity
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
+import android.bluetooth.le.BluetoothLeScanner
+import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanFilter
+import android.bluetooth.le.ScanFilter.Builder
+import android.bluetooth.le.ScanResult
+import android.bluetooth.le.ScanSettings
+import android.content.Context.MODE_PRIVATE
+import android.content.Intent
+import android.content.SharedPreferences
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.os.ParcelUuid
+import android.provider.Settings
+import android.util.SparseArray
+import android.widget.Toast
+import androidx.core.app.ActivityCompat
+import androidx.core.app.ActivityCompat.startActivityForResult
+import androidx.core.content.ContextCompat.getSystemService
+import app.tauri.annotation.InvokeArg
+import app.tauri.plugin.Channel
+import app.tauri.plugin.Invoke
+import app.tauri.plugin.JSArray
+import app.tauri.plugin.JSObject
+
+class BleDevice(
+    val address: String,
+    private val name: String,
+    private val rssi: Int,
+    private val connected: Boolean,
+    private val manufacturerData: SparseArray<ByteArray>?,
+    private val serviceData: Map<ParcelUuid, ByteArray>?,
+    private val services: List<ParcelUuid>?
+){
+    fun toJsObject():JSObject{
+        val obj = JSObject()
+        obj.put("address",address)
+        obj.put("id",address)
+        obj.put("name",name)
+        obj.put("connected",connected)
+        obj.put("rssi",rssi)
+        // create Json Array from services
+        val services = if (services != null) {
+            val arr = JSArray();
+            for (service in services){
+                arr.put(service)
+            }
+            arr
+        } else { null }
+        obj.put("services",services)
+        // crate object from sparse Array
+        val manufacturerData = if (manufacturerData != null) {
+            val subObj = JSObject()
+            for (i in 0 until manufacturerData.size()) {
+                val key = manufacturerData.keyAt(i)
+                // get the object by the key.
+                val value = manufacturerData.get(key)
+                val arr = JSArray()
+                for (element in value){
+                    // toInt is needed to generate number in Json
+                    // the UByte is serialized as string
+                    arr.put(element.toUByte().toInt())
+                }
+                subObj.put(key.toString(),arr)
+            }
+            subObj
+        } else { null }
+        obj.put("manufacturerData",manufacturerData)
+        // crate object from serviceData
+        val serviceData = if (serviceData != null) {
+            val subObj = JSObject()
+            for ((key, value) in serviceData){
+                val arr = JSArray()
+                for (element in value){
+                    // toInt is needed to generate number in Json
+                    // the UByte is serialized as string
+                    arr.put(element.toUByte().toInt())
+                }
+                subObj.put(key.toString(),arr)
+            }
+            subObj
+        } else { null }
+        obj.put("serviceData",serviceData)
+        return obj
+    }
+}
+
+class BleClient(private val activity: Activity, private val plugin: BleClientPlugin) {
+    private var scanner: BluetoothLeScanner? = null;
+    private var manager: BluetoothManager? = null;
+    private var scanCb: ScanCallback? = null;
+
+    private fun markFirstPermissionRequest(perm: String) {
+        val sharedPreference: SharedPreferences =
+            activity.getSharedPreferences("PREFS_PERMISSION_FIRST_TIME_ASKING", MODE_PRIVATE)
+        sharedPreference.edit().putBoolean(perm, false).apply()
+    }
+
+    private fun firstPermissionRequest(perm: String): Boolean {
+        return activity.getSharedPreferences("PREFS_PERMISSION_FIRST_TIME_ASKING", MODE_PRIVATE)
+            .getBoolean(perm, true)
+    }
+
+    public fun checkPermissions(): Boolean {
+
+        val permissions =  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            arrayOf(
+                Manifest.permission.BLUETOOTH_SCAN,
+                Manifest.permission.BLUETOOTH_CONNECT
+            )
+        } else {
+            arrayOf(
+                Manifest.permission.BLUETOOTH_ADMIN,
+                Manifest.permission.BLUETOOTH,
+            )
+        };
+        for (perm in permissions){
+            if (ActivityCompat.checkSelfPermission(
+                    activity,
+                    perm
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                if (firstPermissionRequest(perm) || activity.shouldShowRequestPermissionRationale(perm)) {
+                    // this will open the permission dialog
+                    markFirstPermissionRequest(perm)
+                    activity.requestPermissions(permissions, 1)
+                    return false
+                } else{
+                    // this will open settings which asks for permission
+                    val intent = Intent(
+                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:${activity.packageName}")
+                    )
+                    activity.startActivity(intent)
+                    Toast.makeText(activity, "Allow Permission: $perm", Toast.LENGTH_SHORT).show()
+                    return false
+                }
+            }
+        }
+        return true
+    }
+
+    @InvokeArg
+    class ScanParams {
+        val services: ArrayList<String> = ArrayList()
+        val onDevice: Channel? = null
+    }
+    @SuppressLint("MissingPermission")
+    fun startScan(invoke: Invoke) {
+        // check if running
+        if (scanCb != null){
+            invoke.reject("Scan already running")
+            return
+        }
+        // check permission
+        if (!checkPermissions()){
+            invoke.reject("Missing permissions");
+            return
+        }
+
+        // get scanner
+        if (scanner == null) {
+            manager = getSystemService(activity, BluetoothManager::class.java)
+                ?: throw RuntimeException("No bluetooth manager found")
+            val bluetoothAdapter: BluetoothAdapter = manager!!.adapter
+                ?: throw RuntimeException("No bluetooth adapter available")
+            // check if bluetooth is on
+            if (!bluetoothAdapter.isEnabled ) {
+                val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
+                startActivityForResult(activity, enableBtIntent,0,null)
+            }
+            scanner = bluetoothAdapter.bluetoothLeScanner
+                ?: throw RuntimeException("No bluetooth scanner available for adapter")
+        }
+
+        // clear old devices
+        this.plugin.devices.clear()
+
+        val args = invoke.parseArgs(ScanParams::class.java)
+        var filters: ArrayList<ScanFilter?>? = null
+        if (args.services.size > 0) {
+            filters = ArrayList()
+            for (uuid in args.services) {
+                filters.add(Builder().setServiceUuid(ParcelUuid.fromString(uuid)).build())
+            }
+        }
+        val settings = ScanSettings.Builder()
+            .setCallbackType(ScanSettings.CALLBACK_TYPE_ALL_MATCHES)
+            .build()
+
+        scanCb = object: ScanCallback(){
+            private fun sendResult(result: ScanResult){
+                var name = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    result.device.alias
+                } else {
+                    result.device.name
+                };
+                if (name==null){
+                    name = result.scanRecord?.deviceName
+                }
+                if (name == null) {
+                    // TODO: think about other filtering instead
+                    return;
+                }
+                val connected = this@BleClient.manager!!.getConnectionState(result.device,BluetoothProfile.GATT_SERVER) == BluetoothProfile.STATE_CONNECTED
+                val device = BleDevice(
+                    result.device.address,
+                    name,
+                    result.rssi,
+                    connected,
+                    result.scanRecord?.manufacturerSpecificData,
+                    result.scanRecord?.serviceData,
+                    result.scanRecord?.serviceUuids
+                )
+                this@BleClient.plugin.devices[device.address] = Peripheral(this@BleClient.activity, result.device, this@BleClient.plugin)
+                val res = JSObject()
+                res.put("result", device.toJsObject())
+                args.onDevice!!.send(res)
+            }
+            override fun onBatchScanResults(results: List<ScanResult>){
+                for(result in results){
+                    sendResult(result)
+                }
+            }
+            override fun onScanFailed(errorCode: Int){
+                println("Scan failed with error code $errorCode")
+            }
+            override fun onScanResult(callbackType: Int, result: ScanResult){
+                sendResult(result)
+            }
+        }
+        scanner?.startScan(filters, settings, scanCb!!)
+        invoke.resolve()
+    }
+
+    @SuppressLint("MissingPermission")
+    fun stopScan(invoke: Invoke){
+        println("stopScan")
+        if (scanCb!=null) {
+            scanner?.stopScan(scanCb!!)
+            scanCb = null
+        }
+        invoke.resolve()
+    }
+}

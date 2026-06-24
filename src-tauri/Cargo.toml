@@ -1,0 +1,18 @@
+[package]
+name = "pinky-desktop"
+version = "0.2.2"
+description = "Pinky WiFi 설정 (BLE) 데스크탑 앱"
+authors = ["PinkLab"]
+edition = "2021"
+
+[lib]
+name = "pinky_desktop_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+# crates.io 의 0.4.5 를 그대로 vendoring 후, notify/scan 채널 패닉 버그를 패치한 로컬 사본 사용
+tauri-plugin-blec = { path = "vendor/tauri-plugin-blec" }
