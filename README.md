@@ -1,6 +1,6 @@
 # Pinky Studio
 
-BLE로 Pinky(라즈베리파이5)에 연결해 WiFi를 설정하는 데스크탑 앱.
+BLE로 Pinky에 연결해 WiFi를 설정하는 데스크탑 앱.
 
 ## 기술 스택
 
