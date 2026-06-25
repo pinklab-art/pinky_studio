@@ -5,6 +5,12 @@ description = "Pinky WiFi 설정 (BLE) 데스크탑 앱"
 authors = ["PinkLab"]
 edition = "2021"
 
+# 크레이트/패키지 이름(git)은 pinky-desktop 그대로 두되, 설치되는 실행파일/명령은
+# pinky-studio 로 나가게 한다. (tauri.conf.json 의 mainBinaryName 과 짝)
+[[bin]]
+name = "pinky-studio"
+path = "src/main.rs"
+
 [lib]
 name = "pinky_desktop_lib"
 crate-type = ["lib", "cdylib", "staticlib"]

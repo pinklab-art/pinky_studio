@@ -16,7 +16,7 @@ Pinky 로봇에 BLE 로 WiFi 를 설정해 주는 데스크탑 앱.
 GitHub Releases 페이지에서 **내 OS 에 맞는 파일**을 받아 실행하면 된다. 따로 빌드 도구
 (Node·Rust 등) 설치가 필요 없다.
 
-> **Releases:** https://github.com/kyunghwan51/pinky-desktop/releases
+> **Releases:** https://github.com/pinklab-art/pinky_studio/releases
 > (레포 주소가 다르면 해당 저장소의 Releases 페이지로. 파일명의 버전(`0.1.0`)·아키텍처는
 > 릴리스마다 다를 수 있다.)
 
@@ -41,7 +41,7 @@ chmod +x "Pinky Studio_0.1.0_amd64.AppImage"
 **deb 패키지로 설치:**
 ```bash
 sudo apt install ./"Pinky Studio_0.1.0_amd64.deb"
-# 실행: 앱 메뉴의 "Pinky Studio" 또는 터미널에서 pinky-desktop
+# 실행: 앱 메뉴의 "Pinky Studio" 또는 터미널에서 pinky-studio
 ```
 
 **BLE 요건:** bluetooth 서비스 active(`systemctl status bluetooth`), 어댑터 켜짐
