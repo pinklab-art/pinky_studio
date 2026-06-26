@@ -15,8 +15,8 @@
       {
         "title": "Pinky Studio",
         "label": "main",
-        "width": 560,
-        "height": 760,
+        "width": 508,
+        "height": 869,
         "minWidth": 480,
         "minHeight": 700,
         "resizable": true
