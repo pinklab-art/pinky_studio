@@ -1,6 +1,6 @@
 [package]
 name = "pinky-desktop"
-version = "0.1.0"
+version = "0.2.0"
 description = "Pinky WiFi 설정 (BLE) 데스크탑 앱"
 authors = ["PinkLab"]
 edition = "2021"
