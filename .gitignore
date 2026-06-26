@@ -11,3 +11,6 @@ src-tauri/gen
 
 # os
 .DS_Store
+
+# claude code
+.claude
