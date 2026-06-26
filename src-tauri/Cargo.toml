@@ -22,3 +22,5 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 # crates.io 의 0.4.5 를 그대로 vendoring 후, notify/scan 채널 패닉 버그를 패치한 로컬 사본 사용
 tauri-plugin-blec = { path = "vendor/tauri-plugin-blec" }
+# IP:8888 Jupyter 링크를 기본 브라우저로 열기 위한 플러그인
+tauri-plugin-opener = "2"

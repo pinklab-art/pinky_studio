@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { openUrl } from "@tauri-apps/plugin-opener";
 
 type WifiNet = { ssid: string; signal: string; security: string };
 
@@ -29,6 +30,8 @@ export default function Page() {
   const [connecting, setConnecting] = useState(false);
   const [scanningDev, setScanningDev] = useState(false);
   const [currentWifi, setCurrentWifi] = useState("현재 WiFi: (연결 후 표시)");
+  // 로봇이 받은 WiFi IP. 있으면 Jupyter(IP:8888) 링크를 띄운다.
+  const [currentIp, setCurrentIp] = useState<string | null>(null);
 
   const [networks, setNetworks] = useState<WifiNet[]>([]);
   const [ssid, setSsid] = useState("");
@@ -60,6 +63,7 @@ export default function Page() {
         if (!c) {
           setConnecting(false); // 끊기면 "연결 중" 도 풀어 버튼이 잠기지 않게
           setCurrentWifi("현재 WiFi: (연결 후 표시)");
+          setCurrentIp(null);
           setCurrentDomain("현재 도메인: (연결 후 표시)");
         }
       },
@@ -169,6 +173,8 @@ export default function Page() {
       }
       if (evt.event === "connect_result" && evt.ok) {
         setResult(`✅ 연결 성공\nIP: ${evt.ip}`);
+        const ip = evt.ip as string | null;
+        if (ip && ip !== "-") setCurrentIp(ip);
         await refreshStatus();
       } else {
         setResult(`❌ 실패: ${evt.message ?? ""}`);
@@ -189,8 +195,10 @@ export default function Page() {
     const ip = evt.ip as string | null;
     if (state === "connected" && s) {
       setCurrentWifi(`현재 WiFi: ${s}  (IP: ${ip})`);
+      setCurrentIp(ip && ip !== "-" ? ip : null);
     } else {
       setCurrentWifi(`현재 WiFi: 미연결 (state=${state})`);
+      setCurrentIp(null);
     }
     // 현재 ROS_DOMAIN_ID 표시 + 입력칸 프리필
     const d = evt.domain_id;
@@ -243,14 +251,20 @@ export default function Page() {
     }
   };
 
-  // 연결 직후 조회 실패 시 현재 WiFi/도메인만 다시 조회 (결과창은 안 건드림)
-  const onRefreshStatus = async () => {
-    if (!connected || busy) return;
-    setBusy(true);
+  // WiFi IP 가 아직 없으면(미할당) 로봇 AP 기본 주소로 접속.
+  const jupyterIp = currentIp ?? "192.168.4.1";
+  // AP 안내에 띄울 SSID — BLE 연결 중일 때만 연결된 기기명을 쓰고,
+  // 해제 상태면 일반 표기(pinky_*)로 되돌린다.
+  const apSsid = (connected && lastDevice?.name) || "pinky_*";
+
+  // 로봇 Jupyter(8888) 를 기본 브라우저로 연다.
+  const openJupyter = async () => {
+    const url = `http://${jupyterIp}:8888`;
+    log(`Jupyter 열기: ${url}`);
     try {
-      await refreshStatus();
-    } finally {
-      setBusy(false);
+      await openUrl(url);
+    } catch (e) {
+      log(`Jupyter 열기 실패: ${String(e)}`);
     }
   };
 
@@ -308,17 +322,40 @@ export default function Page() {
               연결 해제
             </Button>
           </div>
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-sm font-semibold text-emerald-600">{currentWifi}</p>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onRefreshStatus}
-              disabled={!connected || busy}
-            >
-              조회
-            </Button>
+          <p className="text-sm font-semibold text-emerald-600">{currentWifi}</p>
+        </CardContent>
+      </Card>
+
+      {/* Jupyter 접속 — BLE 연결과 무관하게 항상 노출. WiFi 연결 시 실제 IP,
+          미연결 시 로봇 AP 기본 주소(192.168.4.1) 로 접속. */}
+      <Card>
+        <CardContent className="flex items-center justify-between gap-3 py-3">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">Jupyter 접속</p>
+            <p className="truncate text-xs text-muted-foreground">
+              {currentIp
+                ? `${jupyterIp}:8888`
+                : `${jupyterIp}:8888 · 로봇 AP(${apSsid}) 연결 필요`}
+            </p>
           </div>
+          <Button onClick={openJupyter} className="shrink-0" title={`http://${jupyterIp}:8888`}>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M15 3h6v6" />
+              <path d="M10 14 21 3" />
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+            </svg>
+            열기
+          </Button>
         </CardContent>
       </Card>
 
